@@ -6,7 +6,7 @@ import json
 import os
 
 from models.fusion_transformer import MultimodalFusionLLM
-from training.train import MultimodalDataset
+from training.train2 import MultimodalDataset
 
 # This is a placeholder for a more sophisticated evaluation, like using a powerful LLM (e.g., GPT-4) as a judge.
 def evaluate_with_gpt_judge(generated_text, reference_text, tone_context):
