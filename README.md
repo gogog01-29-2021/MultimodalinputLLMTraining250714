@@ -1,4 +1,12 @@
 # Natural Video LLM
+| Item                              | Rough Count (Your 15m Session) | What You’d Need (Ballpark)               | Why                                                    |
+| --------------------------------- | ------------------------------ | ---------------------------------------- | ------------------------------------------------------ |
+| Distinct textual turns            | \~150 (6 sec/turn)             | 5–10k (multi-user)                       | Basic variance in lexical/emotional context            |
+| Video frames (RAW)                | 15m \* 30fps = 27k             | Irrelevant raw; you’ll downsample anyway | You extract features (AU / embeddings)                 |
+| Stable affect windows (e.g. 1–2s) | \~500–800                      | 20–50k                                   | Train even a modest temporal regressor robustly        |
+| Unique affective *shifts*         | \~30–60                        | 2–5k                                     | Need transitions to learn dynamics, not static posture |
+| Paired reward annotations         | 0 (unless you annotate)        | 20k+ (or continuous trace)               | RLHF / reward modeling requires coverage               |
+
 
 This project aims to train an LLM using real-time natural human facial expressions captured from live video during interaction, without using any symbolic labels like "AU" or "emotion class". The goal is to build a conversational model that learns to adapt and align responses subconsciously, the way humans co-regulate tone and meaning in real life.
 
