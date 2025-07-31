@@ -36,28 +36,21 @@ class MultimodalDataset(Dataset):
         # Load video latents
         video_latents_list = []
         for video_file in associated_video_files:
-            # Assuming video_file is like ".mp4" and latents are ".npy"
             latent_filename = os.path.basename(video_file).replace(\".mp4\", \"_latents.npy\")
             latent_path = os.path.join(self.video_latents_dir, latent_filename)
             if os.path.exists(latent_path):
                 video_latents_list.append(torch.tensor(np.load(latent_path), dtype=torch.float32))
             else:
-                # Handle missing latent files (e.g., return a zero tensor or skip)
-                print(f"Warning: Latent file not found for {video_file}. Using dummy data.")
-                video_latents_list.append(torch.zeros(1, 512)) # Dummy data
+                print(f"Warning: Latent file not found for {video_file}. Skipping.")
         
         if not video_latents_list:
-            # If no video latents are found, provide a dummy tensor
-            video_latents = torch.zeros(1, 512) # Single dummy frame
+            # If no video latents are found, provide a dummy tensor of appropriate shape
+            # This assumes a single video latent vector per text entry for simplicity
+            video_latents = torch.zeros(1, 512) # Dummy data for one frame
         else:
-            # Pad or truncate video latents to a fixed number of frames if necessary
-            # For simplicity, let's just take the first one or concatenate if multiple
-            video_latents = torch.cat(video_latents_list, dim=0) # Concatenate all latents
-            # You might want to implement padding/truncation here to a fixed number of frames
-            # For now, let's just take the first frame's latent if there are many
-            if video_latents.shape[0] > 1:
-                video_latents = video_latents[0].unsqueeze(0) # Take first frame's latent
-            
+            # Average video latents if multiple are associated with one text entry
+            # This is a simplification; more sophisticated pooling or sequence modeling could be used
+            video_latents = torch.mean(torch.stack(video_latents_list), dim=0)
 
         return {
             \'input_ids\': input_ids,
@@ -82,27 +75,14 @@ def train_model(model, dataset, loss_fn, optimizer, num_epochs=3, batch_size=4, 
             optimizer.zero_grad()
 
             # Forward pass through the multimodal fusion LLM
-            # The MultimodalFusionLLM returns fused_embeddings
-            fused_embeddings = model(input_ids, attention_mask, video_latents)
-
-            # To calculate LM loss, we need to pass fused_embeddings through the LLM's LM head
-            # This is a simplified example. In a real scenario, you'd integrate this more deeply.
-            # For GPT-2, the LM head is usually `model.llm.lm_head`
-            lm_logits = model.llm.lm_head(fused_embeddings)
+            lm_logits, text_embeddings_from_llm = model(input_ids, attention_mask, video_latents)
 
             # Calculate loss
-            # The loss function expects `text_embeddings_from_llm` for contrastive loss.
-            # We can get this from the base LLM output before fusion.
-            with torch.no_grad(): # Don't compute gradients for this part if it's just for contrastive loss
-                llm_outputs_for_contrastive = model.llm.base_model(input_ids=input_ids, attention_mask=attention_mask, output_hidden_states=True)
-                text_embeddings_for_contrastive = llm_outputs_for_contrastive.last_hidden_state
-
             total_batch_loss, lm_batch_loss, contrastive_batch_loss = loss_fn(
-                fused_embeddings=lm_logits, # Pass logits for LM loss
+                lm_logits=lm_logits,
                 target_text_ids=target_text_ids,
-                text_attention_mask=attention_mask,
                 video_latents=video_latents,
-                text_embeddings_from_llm=text_embeddings_for_contrastive
+                text_embeddings_from_llm=text_embeddings_from_llm
             )
 
             total_batch_loss.backward()

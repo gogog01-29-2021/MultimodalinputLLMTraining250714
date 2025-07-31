@@ -29,34 +29,25 @@ class MultimodalFusionLLM(nn.Module):
         # Project video latents to LLM embedding space
         projected_video_latents = self.video_projection(video_latents)
         
-        # Get LLM embeddings
+        # Get LLM embeddings from the base model
         llm_outputs = self.llm.base_model(input_ids=input_ids, attention_mask=attention_mask, output_hidden_states=True)
         text_embeddings = llm_outputs.last_hidden_state
 
         # Apply cross-attention: query=text, key=value=video
-        # Permute to (sequence_length, batch_size, embed_dim) for MultiheadAttention
-        # Or use batch_first=True in MultiheadAttention constructor
         attn_output, _ = self.cross_attention(
             query=text_embeddings,
             key=projected_video_latents,
             value=projected_video_latents
         )
         
-        # Add and normalize
+        # Add and normalize the attention output with text embeddings
         fused_embeddings = self.norm(text_embeddings + attn_output)
 
-        # Pass fused embeddings through the LLM's language modeling head
-        # This requires manually passing through the LM head, as we've bypassed the usual forward pass
-        # For simplicity, we'll just return the fused embeddings for now, 
-        # and the loss function will handle the next token prediction.
-        # In a full implementation, you'd re-integrate this into the LLM's forward pass or use a custom LM head.
+        # Pass fused embeddings through the LLM's language modeling head to get logits
+        lm_logits = self.llm.lm_head(fused_embeddings)
         
-        # A more complete approach would involve feeding fused_embeddings back into the LLM's decoder layers
-        # or using them to modify the attention mechanism within the LLM.
-        # For this initial setup, we'll assume the fused_embeddings are the enhanced representations
-        # that will be used for downstream tasks (e.g., next token prediction in the training loop).
-        
-        return fused_embeddings
+        # Return logits for next token prediction and original text embeddings for contrastive loss
+        return lm_logits, text_embeddings
 
 if __name__ == '__main__':
     # Example usage
@@ -67,8 +58,11 @@ if __name__ == '__main__':
     attention_mask = torch.ones(2, 10)
     video_latents = torch.randn(2, 5, 512) # Batch size 2, 5 video frames, latent dim 512
 
-    fused_output = model(input_ids, attention_mask, video_latents)
-    print("Fused output shape:", fused_output.shape)
-    # Expected output shape: torch.Size([2, 10, 768]) (batch_size, sequence_length, hidden_size)
+    lm_logits, text_embeddings = model(input_ids, attention_mask, video_latents)
+    print("LM Logits shape:", lm_logits.shape)
+    print("Text Embeddings shape:", text_embeddings.shape)
+    # Expected output shapes: 
+    # LM Logits: torch.Size([2, 10, vocab_size]) (batch_size, sequence_length, vocab_size)
+    # Text Embeddings: torch.Size([2, 10, 768]) (batch_size, sequence_length, hidden_size)
 
 

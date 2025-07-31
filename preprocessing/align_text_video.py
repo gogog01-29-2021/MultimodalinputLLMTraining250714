@@ -9,46 +9,73 @@ def align_text_video(session_log_path, output_dir=".", alignment_filename="align
 
     aligned_data_path = os.path.join(output_dir, alignment_filename)
 
-    video_entries = []
+    video_segments = []
     text_entries = []
+
+    current_video_segment = None
 
     with open(session_log_path, \'r\') as f:
         for line in f:
             entry = json.loads(line.strip())
             entry_time = datetime.fromisoformat(entry[\'timestamp\'])
-            if \'video_file\' in entry:
-                video_entries.append({\'time\': entry_time, \'file\': entry[\'video_file\]})
+
+            if \'event\' in entry and entry[\'event\'] == \'video_segment_start\':
+                if current_video_segment is not None: # Close previous segment if open
+                    current_video_segment[\'end_time\'] = entry_time # Use start of new segment as end of old
+                    video_segments.append(current_video_segment)
+                current_video_segment = {
+                    \'start_time\': entry_time,
+                    \'video_file\': entry[\'video_file\'],
+                    \'end_time\': None # Will be filled by next segment start or end of log
+                }
+            elif \'event\' in entry and entry[\'event\'] == \'video_segment_end\':
+                if current_video_segment is not None and current_video_segment[\'video_file\'] == entry[\'video_file\']:
+                    current_video_segment[\'end_time\'] = entry_time
+                    video_segments.append(current_video_segment)
+                    current_video_segment = None
             elif \'text\' in entry:
-                text_entries.append({\'time\': entry_time, \'text\': entry[\'text\]})
+                text_entries.append({\'time\': entry_time, \'text\': entry[\'text\']})
+
+    # Add any remaining open video segment
+    if current_video_segment is not None and current_video_segment[\'end_time\'] is None:
+        current_video_segment[\'end_time\'] = datetime.now() # Assume end at current time if not explicitly logged
+        video_segments.append(current_video_segment)
 
     # Sort entries by time to ensure correct alignment
-    video_entries.sort(key=lambda x: x[\'time\'])
+    video_segments.sort(key=lambda x: x[\'start_time\'])
     text_entries.sort(key=lambda x: x[\'time\'])
 
     with open(aligned_data_path, \'w\') as outfile:
         for text_entry in text_entries:
             text_time = text_entry[\'time\']
-            associated_videos = []
+            associated_video_files = []
             
-            # Find video frames within the time window around the text entry
-            for video_entry in video_entries:
-                video_time = video_entry[\'time\']
-                if abs((text_time - video_time).total_seconds()) <= time_window_seconds:
-                    associated_videos.append(video_entry[\'file\'])
+            # Find video segments that overlap with the text entry's time window
+            for video_segment in video_segments:
+                segment_start = video_segment[\'start_time\']
+                segment_end = video_segment[\'end_time\']
+                
+                # Check for overlap: text_time within segment or segment overlaps text_time window
+                if segment_end and (
+                    (text_time >= segment_start and text_time <= segment_end) or
+                    (text_time - timedelta(seconds=time_window_seconds) <= segment_end and \
+                     text_time + timedelta(seconds=time_window_seconds) >= segment_start)
+                ):
+                    associated_video_files.append(video_segment[\'video_file\'])
             
-            if associated_videos:
+            if associated_video_files:
+                # Ensure unique video files
+                associated_video_files = list(set(associated_video_files))
                 json.dump({
                     \'text_timestamp\': text_entry[\'time\'].isoformat(),
                     \'text\': text_entry[\'text\'],
-                    \'associated_video_files\': associated_videos
+                    \'associated_video_files\': associated_video_files
                 }, outfile)
-                outfile.write(\'\n\')
+                outfile.write(\'\\n\')
 
     print(f"Aligned data saved to {aligned_data_path}")
 
 if __name__ == \'__main__\':
-    # Example usage:
-    # Assuming session.jsonl is in the capture directory
     session_log_file = \'/home/ubuntu/natural_video_llm/capture/session.jsonl\'
     if os.path.exists(session_log_file):
         align_text_video(session_log_file, output_dir=\'/home/ubuntu/natural_video_llm/preprocessing\')

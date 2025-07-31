@@ -31,18 +31,27 @@ def evaluate_with_gpt_judge(generated_text, reference_text, tone_context):
 def generate_response(model, tokenizer, input_ids, attention_mask, video_latents, max_length=50, device=\"cpu\"):
     model.eval()
     with torch.no_grad():
-        # The generation process needs to be carefully handled for a custom fusion model.
-        # A simple approach is to get the fused embeddings and then use the LLM to generate from there.
+        # Get the initial text embeddings from the LLM's base model
+        initial_text_embeddings = model.llm.base_model.get_input_embeddings()(input_ids)
+
+        # Project video latents to LLM embedding space
+        projected_video_latents = model.video_projection(video_latents)
+
+        # Apply cross-attention: query=text, key=value=video
+        attn_output, _ = model.cross_attention(
+            query=initial_text_embeddings,
+            key=projected_video_latents,
+            value=projected_video_latents
+        )
         
-        # Get fused embeddings from the model
-        fused_embeddings = model(input_ids, attention_mask, video_latents)
-        
+        # Add and normalize the attention output with initial text embeddings
+        fused_embeddings = model.norm(initial_text_embeddings + attn_output)
+
         # Use the LLM's generate method with the fused embeddings as input
-        # This requires that the `generate` method can accept `inputs_embeds`
         generated_ids = model.llm.generate(
             inputs_embeds=fused_embeddings,
             max_length=max_length,
-            attention_mask=attention_mask, # Pass attention mask to handle padding
+            attention_mask=attention_mask, 
             pad_token_id=tokenizer.pad_token_id,
             eos_token_id=tokenizer.eos_token_id,
             bos_token_id=tokenizer.bos_token_id,

@@ -73,3 +73,38 @@ if __name__ == \'__main__\':
     # Example: extract_latents(\"/path/to/your/video.mp4\", output_dir=\"/home/ubuntu/natural_video_llm/preprocessing\")
 
 
+
+
+
+import time
+import watchgod
+
+def watch_for_new_videos(capture_dir, output_dir, model_name='r3d_18'):
+    """Watches the capture directory for new video files and processes them."""
+    print(f"Watching for new video files in {capture_dir}...")
+    processed_files = set()
+
+    for changes in watchgod.watch(capture_dir):
+        for change_type, path in changes:
+            if change_type == watchgod.Change.added and path.endswith('.mp4'):
+                if path not in processed_files:
+                    print(f"New video detected: {path}")
+                    # Wait a moment to ensure the file is fully written
+                    time.sleep(1)
+                    extract_latents(path, output_dir, model_name)
+                    processed_files.add(path)
+
+if __name__ == '__main__':
+    # To run in continuous mode:
+    # 1. Start webcam_video_logger.py in one terminal.
+    # 2. In another terminal, run this script to watch for new videos.
+    capture_directory = '/home/ubuntu/natural_video_llm/capture'
+    latents_output_directory = '/home/ubuntu/natural_video_llm/preprocessing'
+    # watch_for_new_videos(capture_directory, latents_output_directory)
+
+    # The original manual execution is still possible:
+    # Example: extract_latents("/path/to/your/video.mp4", output_dir="/home/ubuntu/natural_video_llm/preprocessing")
+    print("This script can now be run in watch mode to automatically process new videos.")
+    print("Uncomment the 'watch_for_new_videos' call in the main block to enable it.")
+
+
